@@ -9,6 +9,9 @@ import time
 TIMESTAMP_NOW = time.time()
 MATH_64 = 2**64
 NODE_URL = "https://starknet-mainnet.public.blastapi.io"
+LONG = 0
+SHORT = 1
+
 
 AMM_ADDRESS = 0x047472E6755AFC57ADA9550B6A3AC93129CC4B5F98F51C73E0644D129FD208D9
 ETH_ADDRESS = 0x049D36570D4E46F48E99674BD3FCC84644DDD6B96F7C741B1562B82F9E004DC7
@@ -17,20 +20,20 @@ USDC_ADDRESS = 0x053C91253BC9682C04929CA02ED00B3E423F6710D2EE7E0D5EBB06F3ECF368A
 STRK_ADDRESS = 0x04718F5A0FC34CC1AF16A1CDEE98FFB20C31F5CD61D6AB07201858F4287C938D
 
 # pools
-ETH_USDC_CALL = "ETH_USDC_CALL"
-ETH_USDC_PUT = "ETH_USDC_PUT"
-BTC_USDC_CALL = "wBTC_USDC_CALL"
-BTC_USDC_PUT = "wBTC_USDC_PUT"
-ETH_STRK_CALL = "ETH_STRK_CALL"
-ETH_STRK_PUT = "ETH_STRK_PUT"
-STRK_USDC_CALL = "STRK_USDC_CALL"
-STRK_USDC_PUT = "STRK_USDC_PUT"
+ETH_USDC_CALL = "eth-usdc-call"
+ETH_USDC_PUT = "eth-usdc-put"
+BTC_USDC_CALL = "btc-usdc-call"
+BTC_USDC_PUT = "btc-usdc-put"
+ETH_STRK_CALL = "eth-strk-call"
+ETH_STRK_PUT = "eth-strk-put"
+STRK_USDC_CALL = "strk-usdc-call"
+STRK_USDC_PUT = "strk-usdc-put"
 
 POOL_ADDRESSES = {
     ETH_USDC_CALL: 0x70CAD6BE2C3FC48C745E4A4B70EF578D9C79B46FFAC4CD93EC7B61F951C7C5C,
     ETH_USDC_PUT: 0x466E3A6731571CF5D74C5B0D9C508BFB71438DE10F9A13269177B01D6F07159,
-    BTC_USDC_CALL: 0x35DB72A814C9B30301F646A8FA8C192FF63A0DC82BEB390A36E6E9EBA55B6DB,
-    BTC_USDC_PUT: 0x1BF27366077765C922F342C8DE257591D1119EBBCBAE7A6C4FF2F50EDE4C54C,
+    # BTC_USDC_CALL: 0x35DB72A814C9B30301F646A8FA8C192FF63A0DC82BEB390A36E6E9EBA55B6DB,
+    # BTC_USDC_PUT: 0x1BF27366077765C922F342C8DE257591D1119EBBCBAE7A6C4FF2F50EDE4C54C,
     ETH_STRK_CALL: 0x6DF66DB6A4B321869B3D1808FC702713B6CBB69541D583D4B38E7B1406C09AA,
     ETH_STRK_PUT: 0x4DCD9632353ED56E47BE78F66A55A04E2C1303EBCB8EC7EA4C53F4FDF3834EC,
     STRK_USDC_CALL: 0x2B629088A1D30019EF18B893CEBAB236F84A365402FA0DF2F51EC6A01506B1D,
@@ -52,41 +55,9 @@ PRICES = {
 }
 
 
-def get_pool_from_lp_address(lp_address: int) -> str:
-    for key, value in POOL_ADDRESSES.items():
-        if value == lp_address:
-            return key
-    raise Exception(f"{lp_address} did not match pool")
-
-
-def get_pool_from_option(base: int, quote: int, type: int) -> str:
-    if type == 0:
-        if base == BTC_ADDRESS:
-            return BTC_USDC_CALL
-        if base == STRK_ADDRESS:
-            return STRK_USDC_CALL
-        if base == ETH_ADDRESS:
-            if quote == USDC_ADDRESS:
-                return ETH_USDC_CALL
-            elif quote == STRK_ADDRESS:
-                return ETH_STRK_CALL
-    else:
-        if base == BTC_ADDRESS:
-            return BTC_USDC_PUT
-        if base == STRK_ADDRESS:
-            return STRK_USDC_PUT
-        if base == ETH_ADDRESS:
-            if quote == USDC_ADDRESS:
-                return ETH_USDC_PUT
-            elif quote == STRK_ADDRESS:
-                return ETH_STRK_PUT
-
-    raise Exception(f"{base}, {quote}, {type} did not match pool")
-
-
-def get_data_from_api(endpoint: str):
+def get_pool_trade_events(pool: str):
     response = requests.get(
-        f"https://api.carmine.finance/api/v1/mainnet/{endpoint}", timeout=5
+        f"https://api.carmine.finance/api/v1/mainnet/{pool}/trades", timeout=5
     )
     if response.status_code != 200:
         raise Exception("API call failed")
@@ -94,35 +65,21 @@ def get_data_from_api(endpoint: str):
     data = response.json()
 
     if data["status"] == "success":
-        return data["data"]
+        data = data["data"]
     else:
         raise Exception("API call failed")
 
-
-def get_events():
-    data = get_data_from_api("all-transactions")
-
-    trades = []
-
-    for event in data:
-        if event["option"] is not None:
-            if event["option"]["maturity"] > TIMESTAMP_NOW:
-                event.update(event.pop("option"))
-                # convert strike_price from MATH_64
-                event["strike_price"] = int(event["strike_price"], 0) / MATH_64
-                liquidity_pool = get_pool_from_lp_address(int(event["lp_address"], 0))
-                event["liquidity_pool"] = liquidity_pool
-                event["capital_transfered"] = int(event["capital_transfered"], 0)
-                event["tokens_minted"] = int(event["tokens_minted"], 0)
-
-                trades.append(event)
-
-    return trades
+    # filter out events for options pas maturity
+    return [d for d in data if d.get("maturity") > TIMESTAMP_NOW]
 
 
-def get_live_options():
-    options = get_data_from_api("live-options")
-    # TODO: we probably don't need this..?
+def get_weighted_average_maturity(pool: str, side: int) -> float | None:
+    events = get_pool_trade_events(pool)
+    side_specific = [d for d in events if d.get("option_side") == side]
+    numerator = sum(int(d["tokens_minted"], 0) * d["maturity"] for d in side_specific)
+    denominator = sum(int(d["tokens_minted"], 0) for d in side_specific)
+    weighted_average = numerator / denominator if denominator else None
+    return weighted_average
 
 
 def get_token_prices():
@@ -163,24 +120,6 @@ async def get_pool_locked_unlocked(pool: str, amm: Contract):
     return get_asset_price_for_pool(pool, unlocked[0] + parsed_value)
 
 
-def store_to_json(d: dict):
-    with open("./test/carmine.json", "w") as json_file:
-        json.dump(d, json_file, indent=2)
-
-
-def get_longs_shorts_from_events(events: list[dict], pool: str):
-    pool_events = [d for d in events if d.get("liquidity_pool") == pool]
-    longs = []
-    shorts = []
-    for event in pool_events:
-        if event["option_side"] == 0:
-            longs.append(event)
-        else:
-            shorts.append(event)
-
-    return (longs, shorts)
-
-
 async def main():
     get_token_prices()
     # check that the prices are available globally
@@ -194,16 +133,10 @@ async def main():
     )
 
     latest_block = await client.get_block_number()
-
-    trade_events = get_events()
-
     final = {}
-
     date = datetime.datetime.fromtimestamp(TIMESTAMP_NOW).isoformat()
 
     for pool in POOL_ADDRESSES:
-        (longs, shorts) = get_longs_shorts_from_events(trade_events, pool)
-        # TODO: get data from longs, shorts
         tvl = await get_pool_locked_unlocked(pool, amm)
         final[pool] = {
             "protocol": "Carmine",
@@ -216,13 +149,14 @@ async def main():
             "tvl": tvl,
             "open_shorts": "TODO",
             "open_longs": "TODO",
-            "maturity_shorts": "TODO",
-            "maturity_longs": "TODO",
+            "maturity_shorts": get_weighted_average_maturity(pool, SHORT),
+            "maturity_longs": get_weighted_average_maturity(pool, LONG),
             "fees_protocol": 0,
             "fees_users": "TODO",
             "etl_timestamp": TIMESTAMP_NOW,
         }
-    store_to_json(final)
+    with open("./test/carmine.json", "w") as json_file:
+        json.dump(final, json_file, indent=2)
 
 
 if __name__ == "__main__":
