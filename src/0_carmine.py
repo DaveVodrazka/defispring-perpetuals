@@ -88,35 +88,37 @@ def get_weighted_average_maturity(events: list[dict], side: int) -> float | None
 def get_open_positions(events: list[dict], pool: str, side: int) -> float | None:
     side_specific = [d for d in events if d.get("option_side") == side]
 
+    decimals = 18  # LP has 18 decimals
+
     if pool in [ETH_USDC_PUT, STRK_USDC_PUT, BTC_USDC_PUT]:
         is_put = True
         asset_price = PRICES[USDC]
-        digits = 6
+        decimals -= 6
 
     elif pool in [ETH_STRK_PUT]:
         is_put = True
         asset_price = PRICES[STRK]
-        digits = 18
+        decimals -= 18
 
     elif pool in [ETH_USDC_CALL, ETH_STRK_CALL]:
         is_put = False
         asset_price = PRICES[ETH]
-        digits = 18
+        decimals = -18
 
     elif pool in [BTC_USDC_CALL]:
         is_put = False
         asset_price = PRICES[BTC]
-        digits = 8
+        decimals = -8
 
     elif pool in [STRK_USDC_CALL]:
         is_put = False
         asset_price = PRICES[STRK]
-        digits = 18
+        decimals = -18
 
     balance = 0.0
 
     for event in side_specific:
-        size = int(event["tokens_minted"], 0) / 10**digits
+        size = int(event["tokens_minted"], 0) / 10**decimals
         if is_put:
             size = size * event["strike_price"]
         size = size * asset_price
