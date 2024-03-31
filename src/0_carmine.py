@@ -14,10 +14,6 @@ SHORT = 1
 
 
 AMM_ADDRESS = 0x047472E6755AFC57ADA9550B6A3AC93129CC4B5F98F51C73E0644D129FD208D9
-ETH_ADDRESS = 0x049D36570D4E46F48E99674BD3FCC84644DDD6B96F7C741B1562B82F9E004DC7
-BTC_ADDRESS = 0x03FE2B97C1FD336E750087D68B9B867997FD64A2661FF3CA5A7C771641E8E7AC
-USDC_ADDRESS = 0x053C91253BC9682C04929CA02ED00B3E423F6710D2EE7E0D5EBB06F3ECF368A8
-STRK_ADDRESS = 0x04718F5A0FC34CC1AF16A1CDEE98FFB20C31F5CD61D6AB07201858F4287C938D
 
 # pools
 ETH_USDC_CALL = "eth-usdc-call"
@@ -32,8 +28,8 @@ STRK_USDC_PUT = "strk-usdc-put"
 POOL_ADDRESSES = {
     ETH_USDC_CALL: 0x70CAD6BE2C3FC48C745E4A4B70EF578D9C79B46FFAC4CD93EC7B61F951C7C5C,
     ETH_USDC_PUT: 0x466E3A6731571CF5D74C5B0D9C508BFB71438DE10F9A13269177B01D6F07159,
-    # BTC_USDC_CALL: 0x35DB72A814C9B30301F646A8FA8C192FF63A0DC82BEB390A36E6E9EBA55B6DB,
-    # BTC_USDC_PUT: 0x1BF27366077765C922F342C8DE257591D1119EBBCBAE7A6C4FF2F50EDE4C54C,
+    BTC_USDC_CALL: 0x35DB72A814C9B30301F646A8FA8C192FF63A0DC82BEB390A36E6E9EBA55B6DB,
+    BTC_USDC_PUT: 0x1BF27366077765C922F342C8DE257591D1119EBBCBAE7A6C4FF2F50EDE4C54C,
     ETH_STRK_CALL: 0x6DF66DB6A4B321869B3D1808FC702713B6CBB69541D583D4B38E7B1406C09AA,
     ETH_STRK_PUT: 0x4DCD9632353ED56E47BE78F66A55A04E2C1303EBCB8EC7EA4C53F4FDF3834EC,
     STRK_USDC_CALL: 0x2B629088A1D30019EF18B893CEBAB236F84A365402FA0DF2F51EC6A01506B1D,
@@ -47,11 +43,19 @@ USDC = "usd-coin"
 STRK = "starknet"
 
 # starts with 0, gets updated when the script starts
+# PRICES = {
+#     ETH: 0,
+#     BTC: 0,
+#     USDC: 0,
+#     STRK: 0,
+# }
+
+# hardcoded values for testing - coingecko starts returning 429 after few runs
 PRICES = {
-    ETH: 0,
-    BTC: 0,
-    USDC: 0,
-    STRK: 0,
+    ETH: 3479.7861977177963,
+    BTC: 67493.32767383542,
+    USDC: 0.9999836448271266,
+    STRK: 2.1333836830118784,
 }
 
 
@@ -69,17 +73,60 @@ def get_pool_trade_events(pool: str):
     else:
         raise Exception("API call failed")
 
-    # filter out events for options pas maturity
+    # filter out events for options past maturity
     return [d for d in data if d.get("maturity") > TIMESTAMP_NOW]
 
 
-def get_weighted_average_maturity(pool: str, side: int) -> float | None:
-    events = get_pool_trade_events(pool)
+def get_weighted_average_maturity(events: list[dict], side: int) -> float | None:
     side_specific = [d for d in events if d.get("option_side") == side]
     numerator = sum(int(d["tokens_minted"], 0) * d["maturity"] for d in side_specific)
     denominator = sum(int(d["tokens_minted"], 0) for d in side_specific)
     weighted_average = numerator / denominator if denominator else None
     return weighted_average
+
+
+def get_open_positions(events: list[dict], pool: str, side: int) -> float | None:
+    side_specific = [d for d in events if d.get("option_side") == side]
+
+    if pool in [ETH_USDC_PUT, STRK_USDC_PUT, BTC_USDC_PUT]:
+        is_put = True
+        asset_price = PRICES[USDC]
+        digits = 6
+
+    elif pool in [ETH_STRK_PUT]:
+        is_put = True
+        asset_price = PRICES[STRK]
+        digits = 18
+
+    elif pool in [ETH_USDC_CALL, ETH_STRK_CALL]:
+        is_put = False
+        asset_price = PRICES[ETH]
+        digits = 18
+
+    elif pool in [BTC_USDC_CALL]:
+        is_put = False
+        asset_price = PRICES[BTC]
+        digits = 8
+
+    elif pool in [STRK_USDC_CALL]:
+        is_put = False
+        asset_price = PRICES[STRK]
+        digits = 18
+
+    balance = 0.0
+
+    for event in side_specific:
+        size = int(event["tokens_minted"], 0) / 10**digits
+        if is_put:
+            size = size * event["strike_price"]
+        size = size * asset_price
+
+        if event["action"] == "TradeOpen":
+            balance += size
+        elif event["action"] == "TradeClose":
+            balance -= size
+
+    return balance
 
 
 def get_token_prices():
@@ -138,6 +185,7 @@ async def main():
 
     for pool in POOL_ADDRESSES:
         tvl = await get_pool_locked_unlocked(pool, amm)
+        events = get_pool_trade_events(pool)
         final[pool] = {
             "protocol": "Carmine",
             "date": date,
@@ -147,10 +195,10 @@ async def main():
             "funding_rate": 0,
             "price": "TODO",
             "tvl": tvl,
-            "open_shorts": "TODO",
-            "open_longs": "TODO",
-            "maturity_shorts": get_weighted_average_maturity(pool, SHORT),
-            "maturity_longs": get_weighted_average_maturity(pool, LONG),
+            "open_shorts": get_open_positions(events, pool, SHORT),
+            "open_longs": get_open_positions(events, pool, LONG),
+            "maturity_shorts": get_weighted_average_maturity(events, SHORT),
+            "maturity_longs": get_weighted_average_maturity(events, LONG),
             "fees_protocol": 0,
             "fees_users": "TODO",
             "etl_timestamp": TIMESTAMP_NOW,
