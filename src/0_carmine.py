@@ -42,15 +42,26 @@ ETH = "ethereum"
 USDC = "usd-coin"
 STRK = "starknet"
 
-UNDERLYINGS = {
-     ETH_USDC_CALL: 'ETH',
-     ETH_USDC_PUT: 'USDC',
-     BTC_USDC_CALL: 'WBTC',
-     BTC_USDC_PUT: 'USDC',
-     ETH_STRK_CALL: 'ETH',
-     ETH_STRK_PUT: 'STRK',
-     STRK_USDC_CALL: 'STRK',
-     STRK_USDC_PUT: 'USDC',
+UNDERLYING_SYMBOLS = {
+     ETH_USDC_CALL:  ETH,
+     ETH_USDC_PUT:   USDC,
+     BTC_USDC_CALL:  BTC,
+     BTC_USDC_PUT:   USDC,
+     ETH_STRK_CALL:  ETH,
+     ETH_STRK_PUT:   STRK,
+     STRK_USDC_CALL: STRK,
+     STRK_USDC_PUT:  USDC,
+}
+
+UNDERLYING_DECIMALS = {
+    ETH_USDC_CALL:  18,
+    ETH_USDC_PUT:   6,
+    BTC_USDC_CALL:  8,
+    BTC_USDC_PUT:   6,
+    ETH_STRK_CALL:  18,
+    ETH_STRK_PUT:   18,
+    STRK_USDC_CALL: 18,
+    STRK_USDC_PUT:  6,
 }
 
 # starts with 0, gets updated when the script starts
@@ -68,6 +79,37 @@ PRICES = {
     USDC: 0.9999836448271266,
     STRK: 2.1333836830118784,
 }
+
+def get_usd_fees_from_trade(trade: dict[str, str | int], pool: str) -> float:
+
+    decimals = UNDERLYING_DECIMALS[pool]
+    shift_underlying = 10**decimals
+    shift_optoken = 10**18
+
+    tokens_minted = int(trade['tokens_minted'], 0) / shift_optoken
+    capital_transfered = int(trade['capital_transfered'], 0) / shift_underlying
+    
+    underlying_price = PRICES[UNDERLYING_SYMBOLS[pool]]
+    
+    # Long
+    if trade['option_side'] == LONG: 
+        # Total capital transfered is premia + fees(3%)
+        fees = capital_transfered / 103 * 3
+        return fees * underlying_price
+
+    # Shorts
+
+    # Call
+    if trade['option_type'] == 0:  
+        # Here the user receives premia minus 3% fees
+        premia = tokens_minted - capital_transfered
+        fees = premia / 97 * 3
+        return fees * underlying_price 
+
+    # Put
+    premia = tokens_minted * trade['strike_price'] - capital_transfered
+    fees = premia / 97 * 3
+    return fees * underlying_price
 
 
 def get_pool_trade_events(pool: str):
@@ -176,7 +218,7 @@ async def get_pool_locked_unlocked(pool: str, amm: Contract):
 
 
 async def main():
-    get_token_prices()
+    # get_token_prices()
     # check that the prices are available globally
     for t in PRICES:
         if PRICES[t] == 0:
@@ -198,7 +240,7 @@ async def main():
             "protocol": "Carmine",
             "date": date,
             "market": pool.upper(),
-            "tokenSymbol": UNDERLYINGS[pool],
+            "tokenSymbol": UNDERLYING_SYMBOLS[pool],
             "block_height": latest_block,
             "funding_rate": 0,
             "price": "TODO",
@@ -208,7 +250,7 @@ async def main():
             "maturity_shorts": get_weighted_average_maturity(events, SHORT),
             "maturity_longs": get_weighted_average_maturity(events, LONG),
             "fees_protocol": 0,
-            "fees_users": "TODO",
+            "fees_users": sum(get_usd_fees_from_trade(trade, pool) for trade in events),
             "etl_timestamp": TIMESTAMP_NOW,
         }
     with open("./test/carmine.json", "w") as json_file:
