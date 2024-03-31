@@ -5,6 +5,7 @@ from starknet_py.contract import Contract
 from starknet_py.net.full_node_client import FullNodeClient
 import requests
 import time
+from statistics import mean
 
 TIMESTAMP_NOW = time.time()
 MATH_64 = 2**64
@@ -35,6 +36,12 @@ POOL_ADDRESSES = {
     STRK_USDC_CALL: 0x2B629088A1D30019EF18B893CEBAB236F84A365402FA0DF2F51EC6A01506B1D,
     STRK_USDC_PUT: 0x6EBF1D8BD43B9B4C5D90FB337C5C0647B406C6C0045DA02E6675C43710A326F,
 }
+
+# Underlying addresses
+TOKEN_ETH_ADDRESS  = 0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7 
+TOKEN_USDC_ADDRESS = 0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8 
+TOKEN_WBTC_ADDRESS = 0x03fe2b97c1fd336e750087d68b9b867997fd64a2661ff3ca5a7c771641e8e7ac 
+TOKEN_STRK_ADDRESS = 0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d 
 
 # underlying assets
 BTC = "bitcoin"
@@ -130,6 +137,84 @@ def get_pool_trade_events(pool: str):
     return [d for d in data if d.get("maturity") > TIMESTAMP_NOW]
 
 
+def get_live_options() -> list[str]:
+    response = requests.get(
+        f"https://api.carmine.finance/api/v1/mainnet/live-options", timeout=5
+    )
+
+    if response.status_code != 200:
+        raise Exception("API call for live-options failed")
+
+    data = response.json()
+
+    if data["status"] == "success":
+        data = data["data"]
+    else:
+        raise Exception("API call for live-options failed")
+    
+    return data
+
+def parse_live_options(options: list[str]) -> list[dict[str | int]]: 
+
+    parsed_options = []
+
+    for i in range(0, len(options), 9):
+        option = {
+            'side': int(options[i], 0),
+            'maturity': int(options[i+1], 0),
+            'strike_price': int(options[i+2],0) / MATH_64,
+            'quote_token_address': int(options[i+4],0),
+            'base_token_address':  int(options[i+5],0),
+            'type': int(options[i+6], 0),
+            'premia': int(options[i+7],0) / MATH_64
+        }
+
+        parsed_options.append(option)
+    
+    return parsed_options
+
+def map_options_to_pools(parsed_options: list[dict[str|int]]) -> dict[str, list[dict[str, str|int]]]:
+
+    mapped_options_to_pools = {
+        pool: [] for pool in POOL_ADDRESSES.keys()
+    }
+
+    for option in parsed_options:
+        if option['base_token_address'] == TOKEN_ETH_ADDRESS and option['quote_token_address'] == TOKEN_USDC_ADDRESS:
+            if option['type'] == 0: # Call
+                mapped_options_to_pools[ETH_USDC_CALL].append(option)
+            else:
+                mapped_options_to_pools[ETH_USDC_PUT].append(option)
+            continue   
+        
+        if option['base_token_address'] == TOKEN_ETH_ADDRESS and option['quote_token_address'] == TOKEN_STRK_ADDRESS:
+            if option['type'] == 0: # Call
+                mapped_options_to_pools[ETH_STRK_CALL].append(option)
+            else:
+                mapped_options_to_pools[ETH_STRK_PUT].append(option)
+            continue
+            
+        if option['base_token_address'] == TOKEN_WBTC_ADDRESS and option['quote_token_address'] == TOKEN_USDC_ADDRESS:
+            if option['type'] == 0: # Call
+                mapped_options_to_pools[BTC_USDC_CALL].append(option)
+            else:
+                mapped_options_to_pools[BTC_USDC_PUT].append(option)
+            continue
+
+
+        if option['base_token_address'] == TOKEN_STRK_ADDRESS and option['quote_token_address'] == TOKEN_USDC_ADDRESS:
+            if option['type'] == 0: # Call
+                mapped_options_to_pools[STRK_USDC_CALL].append(option)
+            else:
+                mapped_options_to_pools[STRK_USDC_PUT].append(option)
+            continue
+    return mapped_options_to_pools
+
+def get_parsed_mapped_options() -> dict[str, list[dict[str, str|int]]]:
+    live_options = get_live_options()
+    parsed_options = parse_live_options(live_options)
+    return map_options_to_pools(parsed_options)
+
 def get_weighted_average_maturity(events: list[dict], side: int) -> float | None:
     side_specific = [d for d in events if d.get("option_side") == side]
     numerator = sum(int(d["tokens_minted"], 0) * d["maturity"] for d in side_specific)
@@ -218,7 +303,7 @@ async def get_pool_locked_unlocked(pool: str, amm: Contract):
 
 
 async def main():
-    # get_token_prices()
+    get_token_prices()
     # check that the prices are available globally
     for t in PRICES:
         if PRICES[t] == 0:
@@ -233,6 +318,8 @@ async def main():
     final = {}
     date = datetime.datetime.fromtimestamp(TIMESTAMP_NOW).isoformat()
 
+    options = get_parsed_mapped_options()
+
     for pool in POOL_ADDRESSES:
         tvl = await get_pool_locked_unlocked(pool, amm)
         events = get_pool_trade_events(pool)
@@ -243,7 +330,7 @@ async def main():
             "tokenSymbol": UNDERLYING_SYMBOLS[pool],
             "block_height": latest_block,
             "funding_rate": 0,
-            "price": "TODO",
+            "price": mean([i['premia'] for i in options[pool]] or [0]), 
             "tvl": tvl,
             "open_shorts": get_open_positions(events, pool, SHORT),
             "open_longs": get_open_positions(events, pool, LONG),
