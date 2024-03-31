@@ -93,27 +93,22 @@ def get_open_positions(events: list[dict], pool: str, side: int) -> float | None
     if pool in [ETH_USDC_PUT, STRK_USDC_PUT, BTC_USDC_PUT]:
         is_put = True
         asset_price = PRICES[USDC]
-        decimals -= 6
 
     elif pool in [ETH_STRK_PUT]:
         is_put = True
         asset_price = PRICES[STRK]
-        decimals -= 18
 
     elif pool in [ETH_USDC_CALL, ETH_STRK_CALL]:
         is_put = False
         asset_price = PRICES[ETH]
-        decimals = -18
 
     elif pool in [BTC_USDC_CALL]:
         is_put = False
         asset_price = PRICES[BTC]
-        decimals = -8
 
     elif pool in [STRK_USDC_CALL]:
         is_put = False
         asset_price = PRICES[STRK]
-        decimals = -18
 
     balance = 0.0
 
