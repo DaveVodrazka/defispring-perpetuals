@@ -42,6 +42,17 @@ ETH = "ethereum"
 USDC = "usd-coin"
 STRK = "starknet"
 
+UNDERLYINGS = {
+     ETH_USDC_CALL: 'ETH',
+     ETH_USDC_PUT: 'USDC',
+     BTC_USDC_CALL: 'WBTC',
+     BTC_USDC_PUT: 'USDC',
+     ETH_STRK_CALL: 'ETH',
+     ETH_STRK_PUT: 'STRK',
+     STRK_USDC_CALL: 'STRK',
+     STRK_USDC_PUT: 'USDC',
+}
+
 # starts with 0, gets updated when the script starts
 # PRICES = {
 #     ETH: 0,
@@ -187,7 +198,7 @@ async def main():
             "protocol": "Carmine",
             "date": date,
             "market": "TODO",
-            "tokenSymbol": "TODO",
+            "tokenSymbol": UNDERLYINGS[pool],
             "block_height": latest_block,
             "funding_rate": 0,
             "price": "TODO",
