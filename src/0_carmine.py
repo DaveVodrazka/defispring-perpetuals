@@ -164,6 +164,17 @@ async def get_pool_locked_unlocked(pool: str, amm: Contract):
     return get_asset_price_for_pool(pool, unlocked[0] + parsed_value)
 
 
+def get_underlying_asset_for_pool(pool: str) -> str:
+    if pool in [ETH_USDC_PUT, BTC_USDC_PUT, STRK_USDC_PUT]:
+        return "USDC"
+    elif pool in [ETH_STRK_PUT, STRK_USDC_CALL]:
+        return "STRK"
+    elif pool == BTC_USDC_CALL:
+        return "BTC"
+    elif pool in [ETH_USDC_CALL, ETH_STRK_CALL]:
+        return "ETH"
+
+
 async def main():
     get_token_prices()
     # check that the prices are available globally
@@ -184,10 +195,10 @@ async def main():
         tvl = await get_pool_locked_unlocked(pool, amm)
         events = get_pool_trade_events(pool)
         final[pool] = {
-            "protocol": "Carmine",
+            "protocol": "Carmine Options AMM",
             "date": date,
-            "market": "TODO",
-            "tokenSymbol": "TODO",
+            "market": pool,
+            "tokenSymbol": get_underlying_asset_for_pool(pool),
             "block_height": latest_block,
             "funding_rate": 0,
             "price": "TODO",
