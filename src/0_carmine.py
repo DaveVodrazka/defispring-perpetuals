@@ -42,6 +42,17 @@ ETH = "ethereum"
 USDC = "usd-coin"
 STRK = "starknet"
 
+UNDERLYINGS = {
+     ETH_USDC_CALL: 'ETH',
+     ETH_USDC_PUT: 'USDC',
+     BTC_USDC_CALL: 'WBTC',
+     BTC_USDC_PUT: 'USDC',
+     ETH_STRK_CALL: 'ETH',
+     ETH_STRK_PUT: 'STRK',
+     STRK_USDC_CALL: 'STRK',
+     STRK_USDC_PUT: 'USDC',
+}
+
 # starts with 0, gets updated when the script starts
 # PRICES = {
 #     ETH: 0,
@@ -93,27 +104,22 @@ def get_open_positions(events: list[dict], pool: str, side: int) -> float | None
     if pool in [ETH_USDC_PUT, STRK_USDC_PUT, BTC_USDC_PUT]:
         is_put = True
         asset_price = PRICES[USDC]
-        decimals -= 6
 
     elif pool in [ETH_STRK_PUT]:
         is_put = True
         asset_price = PRICES[STRK]
-        decimals -= 18
 
     elif pool in [ETH_USDC_CALL, ETH_STRK_CALL]:
         is_put = False
         asset_price = PRICES[ETH]
-        decimals = -18
 
     elif pool in [BTC_USDC_CALL]:
         is_put = False
         asset_price = PRICES[BTC]
-        decimals = -8
 
     elif pool in [STRK_USDC_CALL]:
         is_put = False
         asset_price = PRICES[STRK]
-        decimals = -18
 
     balance = 0.0
 
@@ -192,7 +198,7 @@ async def main():
             "protocol": "Carmine",
             "date": date,
             "market": pool.upper(),
-            "tokenSymbol": "TODO",
+            "tokenSymbol": UNDERLYINGS[pool],
             "block_height": latest_block,
             "funding_rate": 0,
             "price": "TODO",
