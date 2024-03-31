@@ -191,7 +191,7 @@ async def main():
         final[pool] = {
             "protocol": "Carmine",
             "date": date,
-            "market": "TODO",
+            "market": pool.upper(),
             "tokenSymbol": "TODO",
             "block_height": latest_block,
             "funding_rate": 0,
